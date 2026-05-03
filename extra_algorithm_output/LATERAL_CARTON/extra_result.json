@@ -1,0 +1,83 @@
+{
+  "instance": "LATERAL_CARTON",
+  "n_routes": 12,
+  "limit_s": 24000.0,
+  "limit_h": 6.666667,
+  "capacity_limit": 362,
+  "dump_service_s": 1800.0,
+  "container_service_s": 65.0,
+  "routes": [
+    {
+      "route_index": 1,
+      "n_containers": 79,
+      "total_s": 23641.303,
+      "total_h": 6.567029
+    },
+    {
+      "route_index": 2,
+      "n_containers": 55,
+      "total_s": 23937.649,
+      "total_h": 6.649347
+    },
+    {
+      "route_index": 3,
+      "n_containers": 84,
+      "total_s": 23518.375,
+      "total_h": 6.532882
+    },
+    {
+      "route_index": 4,
+      "n_containers": 68,
+      "total_s": 23380.807,
+      "total_h": 6.494669
+    },
+    {
+      "route_index": 5,
+      "n_containers": 25,
+      "total_s": 23419.268,
+      "total_h": 6.505352
+    },
+    {
+      "route_index": 6,
+      "n_containers": 86,
+      "total_s": 23305.647,
+      "total_h": 6.473791
+    },
+    {
+      "route_index": 7,
+      "n_containers": 137,
+      "total_s": 23990.232,
+      "total_h": 6.663953
+    },
+    {
+      "route_index": 8,
+      "n_containers": 93,
+      "total_s": 23776.495,
+      "total_h": 6.604582
+    },
+    {
+      "route_index": 9,
+      "n_containers": 124,
+      "total_s": 23477.003,
+      "total_h": 6.52139
+    },
+    {
+      "route_index": 10,
+      "n_containers": 81,
+      "total_s": 23950.9,
+      "total_h": 6.653028
+    },
+    {
+      "route_index": 11,
+      "n_containers": 162,
+      "total_s": 23704.2,
+      "total_h": 6.5845
+    },
+    {
+      "route_index": 12,
+      "n_containers": 134,
+      "total_s": 23565.161,
+      "total_h": 6.545878
+    }
+  ]
+}
