@@ -4,3 +4,11 @@ algorithm_output/
 
 # venv local si lo creas dentro de student-kit (opcional)
 student-kit/venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# IDEs
+.idea/
+.vscode/

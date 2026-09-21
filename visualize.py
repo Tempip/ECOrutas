@@ -1,578 +1,386 @@
 """
-visualize.py — Route visualization for SmartEcoRutas  (ALNS pipeline)
-======================================================================
-
-Runs the solver in "visualization mode" for every instance found under
-the data directory, captures snapshots at the key moments of the ALNS
-pipeline, and saves everything to  output/<instance_name>/
-
-Two modes
----------
-  Default (solver mode):
-    Runs the full solver for every instance and saves snapshots.
-    Total time ≈ 4 × --time-limit.
-
-  --from-solution (replay mode):
-    Reads the solution already saved by the solver in
-        extra_algorithm_output/<INSTANCE>/solution.json
-    and draws the final map without re-running the solver.
-    Instant — no computation, identical to what run.py produced.
-
-Snapshots saved per instance (solver mode)
-------------------------------------------
-  snapshot_cw.png            after Clarke-Wright (before merge)
-  snapshot_phase1.png        after Phase 1 local search
-  snapshot_clusters.png      geographic clustering (city vs villages)
-  snapshot_alns_best.png     best solution found by ALNS
-  convergence.png            route count + total time vs ALNS iteration
-  route_times.png            bar chart of each route's time vs limit
-
-Snapshots saved per instance (replay mode)
-------------------------------------------
-  snapshot_final.png         the exact solution from the last run.py run
+visualize.py — figures for the SmartEcoRutas solver
+====================================================
+Draws the solutions that student/algoritmoSmartEcoRutas.py writes to
+extra_algorithm_output/<INSTANCE>/ (solution.json, extra_result.json and the
+*_routes.json pipeline snapshots). Every figure in the README is produced by
+this script.
 
 Usage
 -----
-    python visualize.py                                # solver mode, default data/
-    python visualize.py --data-dir data --time-limit 900 --seed 0
+    python visualize.py                  # figures from the saved solver output
+    python visualize.py --run            # run the solver first (15 min per instance)
+    python visualize.py --instances LATERAL_CARTON --theme light
+    python visualize.py --social         # also draw the 1280x640 repository card
 
-    python visualize.py --from-solution                # replay mode
-    python visualize.py --from-solution --extra-dir extra_algorithm_output
+Output (default folder: docs/img/)
+------
+    routes_<instance>_<theme>.png   one small map per route, that route highlighted
+    utilisation_<theme>.png         duration of every route as a share of the shift
+    social-preview.png              repository card for GitHub / LinkedIn (--social)
 
-    --data-dir    parent folder with 4 instance subfolders  (default: data)
-    --extra-dir   folder with extra_algorithm_output structure (default: extra_algorithm_output)
-    --time-limit  solver budget in seconds per instance  (default: 120)
-    --seed        random seed  (default: 0)
-    --dpi         PNG resolution  (default: 150)
+A summary table in Markdown is printed at the end.
+
+Authors: Pedro José Rodrigues Souza and Illia Pastushenko.
 """
 
 from __future__ import annotations
 
 import argparse
-import random
+import json
+import math
+import statistics
+import subprocess
 import sys
-import time
 from pathlib import Path
 
-import json
-
 import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import matplotlib.patches as mpatches
-import numpy as np
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
+from matplotlib.transforms import blended_transform_factory  # noqa: E402
+import pandas as pd  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(REPO_ROOT))
-
-from framework.problem_instance import ProblemInstance          # noqa: E402
-from student.algoritmoSmartEcoRutas import _Solver              # noqa: E402
-
 INSTANCES = ["LATERAL_CARTON", "LATERAL_ENVASE", "LATERAL_RESTO", "TRASERA_RESTO"]
+SPECIAL = {"BASE", "DUMP"}
+
+# Chart tokens: one accent for the data, neutral inks for everything else.
+THEMES = {
+    "light": {
+        "surface": "#fcfcfb", "ink": "#0b0b0b", "ink2": "#52514e", "muted": "#898781",
+        "grid": "#e1e0d9", "axis": "#c3c2b7", "context": "#cfcdc6", "accent": "#2a78d6",
+    },
+    "dark": {
+        "surface": "#1a1a19", "ink": "#ffffff", "ink2": "#c3c2b7", "muted": "#898781",
+        "grid": "#2c2c2a", "axis": "#383835", "context": "#46463f", "accent": "#3987e5",
+    },
+}
+
+plt.rcParams.update({
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Segoe UI", "Helvetica Neue", "Arial", "DejaVu Sans"],
+    "axes.titlelocation": "left",
+})
+
+
+def px(value: float, dpi: int) -> float:
+    """Convert screen pixels to points so line widths stay crisp at any DPI."""
+    return value * 72.0 / dpi
 
 
 # =============================================================================
-# Drawing helpers
+# Loading
 # =============================================================================
 
-def _get_cmap(name: str):
-    """Compatibility wrapper for matplotlib colormaps (3.7+ deprecation)."""
-    try:
-        return matplotlib.colormaps[name]
-    except AttributeError:
-        return cm.get_cmap(name)
+def load_instance(data_dir: Path, extra_dir: Path, name: str) -> dict | None:
+    """Return coordinates, final routes, per-route summary and snapshots, or None."""
+    folder = extra_dir / name
+    sol_path, res_path = folder / "solution.json", folder / "extra_result.json"
+    if not (sol_path.exists() and res_path.exists()):
+        return None
+
+    nodes = pd.read_csv(data_dir / name / "nodes.csv", usecols=["uid", "kind", "lon", "lat"])
+    coords = {u: (lo, la) for u, lo, la in zip(nodes["uid"], nodes["lon"], nodes["lat"])}
+    containers = nodes[nodes["kind"] == "container"]
+
+    solution = json.loads(sol_path.read_text(encoding="utf-8"))
+    result = json.loads(res_path.read_text(encoding="utf-8"))
+    routes = solution["routes"]
+    summary = result["routes"]
+    if len(routes) != len(summary):
+        raise ValueError(f"{name}: solution.json and extra_result.json disagree on route count")
+
+    snapshots = {}
+    for snap in folder.glob("*_routes.json"):
+        data = json.loads(snap.read_text(encoding="utf-8"))
+        snapshots[data["tag"]] = (data["n_routes"], data["total_time_s"])
+
+    return {
+        "name": name,
+        "coords": coords,
+        "container_xy": (containers["lon"].to_numpy(), containers["lat"].to_numpy()),
+        "routes": routes,
+        "summary": summary,
+        "limit_s": float(result["limit_s"]),
+        "snapshots": snapshots,
+    }
 
 
-def _route_colors(n: int) -> list:
-    cmap = _get_cmap("tab20" if n <= 20 else "hsv")
-    return [cmap(i / max(n - 1, 1)) for i in range(n)]
+# =============================================================================
+# Figure 1 — one small map per route
+# =============================================================================
 
+def plot_route_grid(inst: dict, theme: str, out_path: Path, dpi: int) -> None:
+    T = THEMES[theme]
+    routes, summary, coords = inst["routes"], inst["summary"], inst["coords"]
+    n = len(routes)
+    cols = 4 if n > 9 else 3
+    rows = math.ceil(n / cols)
 
-def _draw_route_map(
-    ax: plt.Axes,
-    solver: "_VisualizingSolver",
-    routes: list[list[int]],
-    title: str,
-) -> None:
-    p      = solver.p
-    colors = _route_colors(len(routes))
+    cx, cy = inst["container_xy"]
+    base, dump = coords["BASE"], coords["DUMP"]
+    xs_all = list(cx) + [base[0], dump[0]]
+    ys_all = list(cy) + [base[1], dump[1]]
+    pad_x = (max(xs_all) - min(xs_all)) * 0.04
+    pad_y = (max(ys_all) - min(ys_all)) * 0.04
+    xlim = (min(xs_all) - pad_x, max(xs_all) + pad_x)
+    ylim = (min(ys_all) - pad_y, max(ys_all) + pad_y)
+    aspect = 1.0 / math.cos(math.radians(sum(ylim) / 2))
 
-    def coords(uid: str):
-        node = p.uid_to_node(uid)
-        return node.lon, node.lat
+    span_x = (xlim[1] - xlim[0]) / aspect
+    span_y = ylim[1] - ylim[0]
+    panel_w = 3.0
+    panel_h = panel_w * span_y / span_x + 0.35
+    header_h = 1.45
+    fig = plt.figure(figsize=(cols * panel_w, rows * panel_h + header_h), dpi=dpi)
+    fig.patch.set_facecolor(T["surface"])
+    top = 1 - header_h / (rows * panel_h + header_h)
+    gs = fig.add_gridspec(rows, cols, left=0.02, right=0.98, bottom=0.02, top=top,
+                          wspace=0.06, hspace=0.28)
 
-    for route, col in zip(routes, colors):
-        uid_route = solver.to_uid_route(route)
-        xs = [coords(u)[0] for u in uid_route]
-        ys = [coords(u)[1] for u in uid_route]
-        ax.plot(xs, ys, "-", color=col, linewidth=0.7, alpha=0.75, zorder=2)
-        cx = [coords(u)[0] for u in uid_route if u not in (solver.BASE, solver.DUMP)]
-        cy = [coords(u)[1] for u in uid_route if u not in (solver.BASE, solver.DUMP)]
-        ax.scatter(cx, cy, s=6, color=col, zorder=3, linewidths=0)
+    stop_size = px(3.2, dpi) ** 2 * 4
+    context_size = px(2.2, dpi) ** 2 * 4
+    for i in range(rows * cols):
+        ax = fig.add_subplot(gs[i // cols, i % cols])
+        ax.set_facecolor(T["surface"])
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_color(T["grid"])
+            spine.set_linewidth(px(1, dpi))
+        if i >= n:
+            ax.axis("off")
+            continue
 
-    bx, by = coords(solver.BASE)
-    dx, dy = coords(solver.DUMP)
-    ax.plot(bx, by, marker="*", markersize=12, color="#2563eb",
-            zorder=5, linestyle="none", label="BASE")
-    ax.plot(dx, dy, marker="D", markersize=7,  color="#6b7280",
-            zorder=5, linestyle="none", label="DUMP")
+        ax.scatter(cx, cy, s=context_size, color=T["context"], linewidths=0, zorder=1)
+        path = [coords[u] for u in routes[i]]
+        ax.plot([p[0] for p in path], [p[1] for p in path], color=T["accent"],
+                linewidth=px(1.4, dpi), alpha=0.9, solid_joinstyle="round",
+                solid_capstyle="round", zorder=2)
+        stops = [coords[u] for u in routes[i] if u not in SPECIAL]
+        ax.scatter([p[0] for p in stops], [p[1] for p in stops], s=stop_size,
+                   color=T["accent"], linewidths=0, zorder=3)
+        ax.scatter(*base, s=px(9, dpi) ** 2 * 4, marker="s", color=T["ink"],
+                   edgecolors=T["surface"], linewidths=px(1.5, dpi), zorder=4)
+        ax.scatter(*dump, s=px(10, dpi) ** 2 * 4, marker="^", color=T["ink"],
+                   edgecolors=T["surface"], linewidths=px(1.5, dpi), zorder=4)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_aspect(aspect)
 
-    ax.set_title(title, fontsize=10, pad=6)
-    ax.set_xlabel("longitude", fontsize=8)
-    ax.set_ylabel("latitude",  fontsize=8)
-    ax.tick_params(labelsize=7)
-    ax.grid(True, linewidth=0.3, alpha=0.4)
+        info = summary[i]
+        share = 100 * info["total_s"] / inst["limit_s"]
+        ax.set_title(f"Route {i + 1}", fontsize=8.5, fontweight="bold", color=T["ink"],
+                     pad=14)
+        ax.text(0, 1.015, f"{info['n_containers']} stops · {info['total_h']:.2f} h · "
+                f"{share:.1f}% of shift", transform=ax.transAxes, fontsize=6.8,
+                color=T["ink2"], va="bottom", ha="left")
 
-    n_rt    = len(routes)
-    handles = [mpatches.Patch(color=colors[i], label=f"Route {i+1}")
-               for i in range(min(n_rt, 12))]
-    if n_rt > 12:
-        handles.append(mpatches.Patch(color="white",
-                                      label=f"... +{n_rt-12} more", linewidth=0))
-    handles += [
-        plt.Line2D([0], [0], marker="*", color="#2563eb",
-                   linestyle="none", markersize=8, label="BASE"),
-        plt.Line2D([0], [0], marker="D", color="#6b7280",
-                   linestyle="none", markersize=6, label="DUMP"),
+    n_cont = len(cx)
+    head_y = 1 - 0.30 / (rows * panel_h + header_h)
+    fig.text(0.02, head_y, f"{inst['name']}: {n} routes cover {n_cont:,} containers",
+             fontsize=13, fontweight="bold", color=T["ink"], va="top")
+    fig.text(0.02, head_y - 0.42 / (rows * panel_h + header_h),
+             "Each panel highlights one route. Lines join consecutive stops in a straight "
+             "line, including trips to the dump; real trucks follow the street network.",
+             fontsize=8, color=T["ink2"], va="top")
+
+    handles = [
+        Line2D([0], [0], color=T["accent"], linewidth=1.6, marker="o", markersize=3.5,
+               label="this route"),
+        Line2D([0], [0], color=T["context"], linestyle="none", marker="o", markersize=3.5,
+               label="other containers"),
+        Line2D([0], [0], color=T["ink"], linestyle="none", marker="s", markersize=5,
+               label="base"),
+        Line2D([0], [0], color=T["ink"], linestyle="none", marker="^", markersize=5.5,
+               label="dump"),
     ]
-    ax.legend(handles=handles, fontsize=6, ncol=2,
-              loc="upper left", framealpha=0.7)
+    legend = fig.legend(handles=handles, loc="upper right", ncol=4, frameon=False,
+                        fontsize=7.5, bbox_to_anchor=(0.985, head_y + 0.004),
+                        handletextpad=0.4, columnspacing=1.2)
+    for text in legend.get_texts():
+        text.set_color(T["ink2"])
 
-
-def _save_snapshot(
-    solver: "_VisualizingSolver",
-    routes: list[list[int]],
-    path: Path,
-    title: str,
-    dpi: int,
-) -> None:
-    n_r, total_t = solver.cost(routes)
-    fig, ax = plt.subplots(figsize=(9, 7))
-    _draw_route_map(ax, solver, routes, title)
-    fig.suptitle(f"{n_r} routes   |   total time {total_t/3600:.2f} h",
-                 fontsize=9, y=0.98)
-    fig.tight_layout()
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=dpi, facecolor=T["surface"])
     plt.close(fig)
-    print(f"    [viz] {path.name}")
-
-
-def _save_cluster_map(solver: "_VisualizingSolver", out_dir: Path, dpi: int) -> None:
-    """
-    Draw a map coloring containers by DBSCAN cluster.
-    City cluster = blue, village clusters = distinct colours, noise = grey.
-    """
-    p           = solver.p
-    clabel      = solver._cluster_label
-    city_cl     = solver._city_cluster
-
-    # Gather unique non-city, non-noise cluster labels
-    village_lbls = sorted({l for l in clabel if l != -1 and l != city_cl})
-    # Assign a colour per village cluster
-    vcmap   = _get_cmap("Set1")
-    v_color = {lbl: vcmap(i / max(len(village_lbls) - 1, 1))
-               for i, lbl in enumerate(village_lbls)}
-
-    fig, ax = plt.subplots(figsize=(9, 7))
-
-    city_xs, city_ys       = [], []
-    noise_xs, noise_ys     = [], []
-    village_pts: dict[int, tuple[list, list]] = {l: ([], []) for l in village_lbls}
-
-    for pos, uid in enumerate(solver.cont_uids):
-        node = p.uid_to_node(uid)
-        lbl  = clabel[pos]
-        if lbl == city_cl:
-            city_xs.append(node.lon); city_ys.append(node.lat)
-        elif lbl == -1:
-            noise_xs.append(node.lon); noise_ys.append(node.lat)
-        else:
-            village_pts[lbl][0].append(node.lon)
-            village_pts[lbl][1].append(node.lat)
-
-    ax.scatter(city_xs,  city_ys,  s=5, color="#2563eb", alpha=0.6,
-               zorder=3, linewidths=0, label=f"City cluster ({len(city_xs)})")
-    ax.scatter(noise_xs, noise_ys, s=5, color="#9ca3af", alpha=0.5,
-               zorder=2, linewidths=0, label=f"Noise ({len(noise_xs)})")
-    for lbl, (xs, ys) in village_pts.items():
-        ax.scatter(xs, ys, s=7, color=v_color[lbl], alpha=0.8,
-                   zorder=4, linewidths=0, label=f"Village cl.{lbl} ({len(xs)})")
-
-    # BASE and DUMP
-    base_node = p.uid_to_node(solver.BASE)
-    dump_node = p.uid_to_node(solver.DUMP)
-    ax.plot(base_node.lon, base_node.lat, marker="*", markersize=14,
-            color="#1e3a8a", zorder=6, linestyle="none", label="BASE")
-    ax.plot(dump_node.lon, dump_node.lat, marker="D", markersize=8,
-            color="#6b7280", zorder=6, linestyle="none", label="DUMP")
-
-    n_city    = len(city_xs)
-    n_village = sum(len(v[0]) for v in village_pts.values())
-    n_noise   = len(noise_xs)
-    ax.set_title(
-        f"DBSCAN geographic clustering\n"
-        f"city={n_city}  village={n_village}  noise={n_noise}  "
-        f"(city_radius={solver.CITY_RADIUS_S:.0f}s)",
-        fontsize=10, pad=6,
-    )
-    ax.set_xlabel("longitude", fontsize=8)
-    ax.set_ylabel("latitude",  fontsize=8)
-    ax.tick_params(labelsize=7)
-    ax.grid(True, linewidth=0.3, alpha=0.4)
-    ax.legend(fontsize=6, ncol=2, loc="upper left", framealpha=0.7)
-
-    fig.tight_layout()
-    path = out_dir / "snapshot_clusters.png"
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
-    print(f"    [viz] {path.name}")
-
-
-def _save_convergence(history: list[dict], out_dir: Path, dpi: int) -> None:
-    if not history:
-        return
-    labels   = [h["label"]      for h in history]
-    n_routes = [h["routes"]     for h in history]
-    times_h  = [h["total_time"] / 3600 for h in history]
-    xs = range(len(history))
-
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
-
-    phase1_routes = n_routes[0]
-    ax1.axhline(phase1_routes, color="#888780", linewidth=1,
-                linestyle=":", label=f"Phase 1 baseline ({phase1_routes})")
-
-    ax1.step(xs, n_routes, where="post", color="#534AB7", linewidth=1.5)
-    ax1.scatter(xs, n_routes, s=25, color="#534AB7", zorder=4)
-    ax1.set_ylabel("route count", fontsize=9)
-    ax1.set_title("convergence — ALNS iterations", fontsize=10)
-    ax1.legend(fontsize=8)
-    ax1.grid(True, linewidth=0.3, alpha=0.4)
-
-    prev = None
-    for i, nr in enumerate(n_routes):
-        if prev is not None and nr < prev:
-            ax1.annotate(f"−{prev-nr}", (i, nr),
-                         textcoords="offset points", xytext=(0, 7),
-                         fontsize=7, color="#534AB7", ha="center")
-        prev = nr
-
-    ax2.plot(xs, times_h, color="#1D9E75", linewidth=1.5)
-    ax2.scatter(xs, times_h, s=25, color="#1D9E75", zorder=4)
-    ax2.set_ylabel("total time (h)", fontsize=9)
-    ax2.set_xlabel("snapshot", fontsize=9)
-    ax2.grid(True, linewidth=0.3, alpha=0.4)
-
-    step = max(1, len(labels) // 20)
-    ax2.set_xticks(list(xs)[::step])
-    ax2.set_xticklabels(labels[::step], rotation=35, ha="right", fontsize=7)
-
-    # separator between Phase 1 and ALNS
-    ax1.axvline(0.5, color="#888780", linewidth=0.8, linestyle="--", alpha=0.6)
-    ax2.axvline(0.5, color="#888780", linewidth=0.8, linestyle="--", alpha=0.6)
-    ax1.text(0.55, ax1.get_ylim()[1] * 0.98, "ALNS →",
-             fontsize=7, color="#888780", va="top")
-
-    fig.tight_layout(rect=[0.06, 0.10, 1.0, 1.0])
-    fig.savefig(out_dir / "convergence.png", dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
-    print(f"    [viz] convergence.png")
-
-
-def _save_route_times(
-    solver: "_VisualizingSolver",
-    routes: list[list[int]],
-    out_dir: Path,
-    dpi: int,
-) -> None:
-    times  = [solver.route_time(r) for r in routes]
-    n_r    = len(times)
-    colors = _route_colors(n_r)
-    limit  = solver.MAX_T
-
-    fig, ax = plt.subplots(figsize=(max(8, n_r * 0.45), 4))
-    bars = ax.bar(range(n_r), [t / 3600 for t in times],
-                  color=colors, width=0.7, zorder=2, linewidth=0)
-    ax.axhline(limit / 3600, color="#dc2626", linewidth=1.2,
-               linestyle="--", label=f"limit ({limit/3600:.1f} h)")
-    for bar, t in zip(bars, times):
-        ax.text(bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.02,
-                f"{100*t/limit:.0f}%", ha="center", va="bottom", fontsize=7)
-    ax.set_xlabel("route index", fontsize=9)
-    ax.set_ylabel("time (hours)", fontsize=9)
-    ax.set_title("route time utilisation vs limit", fontsize=10)
-    ax.set_xticks(range(n_r))
-    ax.set_xticklabels([f"R{i+1}" for i in range(n_r)], fontsize=7)
-    ax.legend(fontsize=8)
-    ax.grid(axis="y", linewidth=0.3, alpha=0.4)
-    ax.set_ylim(0, limit / 3600 * 1.15)
-    fig.tight_layout()
-    fig.savefig(out_dir / "route_times.png", dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
-    print(f"    [viz] route_times.png")
+    print(f"  wrote {out_path.relative_to(REPO_ROOT) if out_path.is_relative_to(REPO_ROOT) else out_path}")
 
 
 # =============================================================================
-# Instrumented solver — ALNS pipeline with snapshot hooks
+# Figure 2 — route duration as a share of the working-time limit
 # =============================================================================
 
-class _VisualizingSolver(_Solver):
-    """
-    Mirrors _Solver.run() exactly but injects snapshot calls at:
-      - after Clarke-Wright
-      - after Phase 1 local search
-      - after DBSCAN clustering (cluster map)
-      - each ALNS iteration (via _iter_hook callback → convergence chart)
-      - final best solution
-    """
+def plot_utilisation(instances: list[dict], theme: str, out_path: Path, dpi: int) -> None:
+    T = THEMES[theme]
+    fig, ax = plt.subplots(figsize=(8.2, 0.78 * len(instances) + 1.75), dpi=dpi)
+    fig.patch.set_facecolor(T["surface"])
+    ax.set_facecolor(T["surface"])
 
-    def __init__(self, problem, out_dir: Path, dpi: int):
-        super().__init__(problem)
-        self.out_dir  = out_dir
-        self.dpi      = dpi
-        self.history: list[dict] = []
+    all_shares = []
+    for row, inst in enumerate(instances):
+        y = len(instances) - 1 - row
+        shares = sorted(100 * r["total_s"] / inst["limit_s"] for r in inst["summary"])
+        all_shares += shares
+        # Deterministic vertical spread so dots with similar values stay visible.
+        offsets = [((k % 5) - 2) * 0.075 for k in range(len(shares))]
+        ax.scatter(shares, [y + o for o in offsets], s=px(8, dpi) ** 2 * 4,
+                   color=T["accent"], edgecolors=T["surface"], linewidths=px(2, dpi),
+                   zorder=3)
+        ax.text(1.005, y, f"{len(shares)} routes · median {statistics.median(shares):.1f}%",
+                transform=blended_transform_factory(ax.transAxes, ax.transData),
+                fontsize=8, color=T["ink2"], va="center", ha="left")
 
-    def run(self, deadline: float) -> list[list[str]]:
-        # ── Phase 1 ──────────────────────────────────────────────────────────
-        t0     = time.time()
-        routes = self.clarke_wright(alpha=0.0)
-        print(f"  [Phase 1] CW: {len(routes)} routes ({time.time()-t0:.1f}s)")
+    span = 100 - min(all_shares)
+    step = 1 if span <= 6 else 2 if span <= 12 else 5 if span <= 30 else 10
+    low = math.floor((min(all_shares) - step / 2) / step) * step
+    ax.set_xlim(low, 100 + step * 0.35)
+    ax.set_ylim(-0.6, len(instances) - 0.4)
+    ax.set_yticks(range(len(instances)))
+    ax.set_yticklabels([inst["name"] for inst in reversed(instances)], fontsize=8.5,
+                       color=T["ink"])
+    ticks = list(range(int(low), 101, step))
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([f"{t}%" for t in ticks], fontsize=8, color=T["muted"])
+    ax.tick_params(axis="both", length=0, pad=6)
+    ax.grid(axis="x", color=T["grid"], linewidth=px(1, dpi), zorder=0)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    ax.spines["bottom"].set_color(T["axis"])
+    ax.spines["bottom"].set_linewidth(px(1, dpi))
 
-        self._snap(routes, "cw", "After Clarke-Wright (before merge)")
+    ax.axvline(100, color=T["ink2"], linewidth=px(1.5, dpi), zorder=2)
+    ax.text(100, len(instances) - 0.45, "shift limit", fontsize=7.5, color=T["ink2"],
+            ha="right", va="bottom")
 
-        routes = self.route_merge_pass(routes)
-        print(f"  [Phase 1] After merge pass: {len(routes)} routes")
+    fig.text(0.015, 0.975, "Route duration as a share of the working-time limit",
+             fontsize=12, fontweight="bold", color=T["ink"], va="top")
+    fig.text(0.015, 0.975 - 0.34 / fig.get_figheight(),
+             "Each dot is one route of the final solution.",
+             fontsize=8.5, color=T["ink2"], va="top")
+    fig.subplots_adjust(left=0.2, right=0.79, top=1 - 0.95 / fig.get_figheight(),
+                        bottom=0.42 / fig.get_figheight())
 
-        t_ls1  = min(deadline, time.time() + self.PHASE1_S)
-        routes = self.local_search(routes, t_ls1)
-        best   = routes
-        best_c = self.cost(best)
-        print(f"  [Phase 1] After local search: routes={best_c[0]}, "
-              f"time={best_c[1]:.0f}s")
-
-        self._snap(routes, "phase1", "Phase 1 — after local search")
-        self._record("Phase 1", best_c)
-
-        # ── Cluster map (uses DBSCAN data computed in __init__) ───────────────
-        _save_cluster_map(self, self.out_dir, self.dpi)
-
-        # ── Phase 2 — ALNS ───────────────────────────────────────────────────
-        best = self._alns_run(best, deadline, _iter_hook=self._record_alns_iter)
-        best_c = self.cost(best)
-
-        # ── Phase 3 — final merge ─────────────────────────────────────────────
-        best   = self.route_merge_pass(best)
-        best_c = self.cost(best)
-        print(f"  [Final] routes={best_c[0]}, time={best_c[1]:.0f}s")
-
-        self._snap(best, "alns_best", "Best ALNS result (final solution)")
-
-        # Supporting charts
-        _save_convergence(self.history, self.out_dir, self.dpi)
-        _save_route_times(self, best, self.out_dir, self.dpi)
-
-        return [self.to_uid_route(r) for r in best]
-
-    # ── helpers ───────────────────────────────────────────────────────────────
-
-    def _snap(self, routes: list[list[int]], tag: str, title: str) -> None:
-        n_r, total_t = self.cost(routes)
-        ts           = time.strftime("%H:%M:%S")
-        full_title   = f"{title}\n{n_r} routes | {total_t/3600:.2f} h | {ts}"
-        _save_snapshot(self, routes,
-                       self.out_dir / f"snapshot_{tag}.png",
-                       full_title, self.dpi)
-
-    def _record(self, label: str, cost: tuple[int, float]) -> None:
-        self.history.append({
-            "label":      label,
-            "routes":     cost[0],
-            "total_time": cost[1],
-        })
-
-    def _record_alns_iter(
-        self,
-        it:     int,
-        best_c: tuple[int, float],
-        marker: str,
-        d_name: str,
-        r_name: str,
-    ) -> None:
-        self._record(f"A{it}({d_name}+{r_name})", best_c)
-
-
-# =============================================================================
-# Entry point — runs all 4 instances
-# =============================================================================
-
-def _replay_instance(
-    name: str,
-    inst_dir: Path,
-    extra_dir: Path,
-    out_dir: Path,
-    dpi: int,
-) -> None:
-    """
-    Load a previously saved solution.json and draw the final route map.
-    The instance data is still needed for coordinates — but the solver
-    never runs.  This produces the exact map for the solution in report.json.
-    """
-    sol_path = extra_dir / name / "solution.json"
-    if not sol_path.exists():
-        print(f"  [skip] {sol_path} not found — run the solver first.")
-        return
-
-    with open(sol_path, encoding="utf-8") as f:
-        payload = json.load(f)
-
-    uid_routes: list[list[str]] = payload["routes"]
-    n_routes = len(uid_routes)
-    print(f"  Loaded {n_routes} routes from {sol_path.name}")
-
-    problem = ProblemInstance.load_from_dir(
-        inst_dir, precompute_neighbors=False, verbose=False
-    )
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    total_t = sum(problem.total_time_route_uids(r) for r in uid_routes)
-
-    fig, ax = plt.subplots(figsize=(9, 7))
-    _draw_route_map_uid(ax, problem, uid_routes,
-                        f"{name} — final solution (from run.py)")
-    fig.suptitle(
-        f"{n_routes} routes   |   total time {total_t/3600:.2f} h   |   "
-        f"loaded from solution.json",
-        fontsize=9, y=0.98,
-    )
-    fig.tight_layout()
-    out_path = out_dir / "snapshot_final.png"
-    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=dpi, facecolor=T["surface"])
     plt.close(fig)
-    print(f"    [viz] {out_path.name}")
+    print(f"  wrote {out_path.relative_to(REPO_ROOT) if out_path.is_relative_to(REPO_ROOT) else out_path}")
 
 
-def _draw_route_map_uid(
-    ax: plt.Axes,
-    problem,
-    uid_routes: list[list[str]],
-    title: str,
-) -> None:
-    """Draw a route map directly from UID route sequences (no internal solver needed)."""
-    base_uid = problem.base_uid()
-    dump_uid = problem.dump_uid()
-    colors   = _route_colors(len(uid_routes))
+# =============================================================================
+# Repository card (GitHub social preview, 1280 x 640)
+# =============================================================================
 
-    def coords(uid: str):
-        node = problem.uid_to_node(uid)
-        return node.lon, node.lat
+def plot_social_preview(inst: dict, out_path: Path) -> None:
+    T = THEMES["dark"]
+    dpi = 200
+    fig = plt.figure(figsize=(1280 / dpi, 640 / dpi), dpi=dpi)
+    fig.patch.set_facecolor(T["surface"])
 
-    for route, col in zip(uid_routes, colors):
-        xs = [coords(u)[0] for u in route]
-        ys = [coords(u)[1] for u in route]
-        ax.plot(xs, ys, "-", color=col, linewidth=0.7, alpha=0.75, zorder=2)
-        cx = [coords(u)[0] for u in route if u not in (base_uid, dump_uid)]
-        cy = [coords(u)[1] for u in route if u not in (base_uid, dump_uid)]
-        ax.scatter(cx, cy, s=6, color=col, zorder=3, linewidths=0)
+    ax = fig.add_axes([0.56, 0.08, 0.41, 0.84])
+    ax.set_facecolor(T["surface"])
+    ax.axis("off")
+    cx, cy = inst["container_xy"]
+    coords = inst["coords"]
+    ax.scatter(cx, cy, s=1.2, color="#6b6b63", linewidths=0, zorder=1)
+    for route in inst["routes"]:
+        path = [coords[u] for u in route]
+        ax.plot([p[0] for p in path], [p[1] for p in path], color=T["accent"],
+                linewidth=0.45, alpha=0.75, zorder=2)
+    ax.set_aspect(1.0 / math.cos(math.radians(float(cy.mean()))))
 
-    bx, by = coords(base_uid)
-    dx, dy = coords(dump_uid)
-    ax.plot(bx, by, marker="*", markersize=12, color="#2563eb",
-            zorder=5, linestyle="none", label="BASE")
-    ax.plot(dx, dy, marker="D", markersize=7,  color="#6b7280",
-            zorder=5, linestyle="none", label="DUMP")
+    fig.text(0.06, 0.70, "SmartEcoRutas", fontsize=26, fontweight="bold", color=T["ink"])
+    fig.text(0.06, 0.525, "Vehicle routing for waste\ncollection in Cartagena",
+             fontsize=10.5, color=T["ink2"], linespacing=1.35)
+    fig.text(0.06, 0.36, "Winning solution · Retos-UPCT 2026", fontsize=10,
+             fontweight="bold", color=T["accent"])
+    fig.text(0.06, 0.285, "Challenge sponsored by Lhicarsa", fontsize=9, color=T["ink2"])
+    fig.text(0.06, 0.12, "Pedro José Rodrigues Souza · Illia Pastushenko", fontsize=8.5,
+             color=T["muted"])
 
-    n_rt    = len(uid_routes)
-    handles = [mpatches.Patch(color=colors[i], label=f"Route {i+1}")
-               for i in range(min(n_rt, 12))]
-    if n_rt > 12:
-        handles.append(mpatches.Patch(color="white",
-                                      label=f"... +{n_rt-12} more", linewidth=0))
-    handles += [
-        plt.Line2D([0], [0], marker="*", color="#2563eb",
-                   linestyle="none", markersize=8, label="BASE"),
-        plt.Line2D([0], [0], marker="D", color="#6b7280",
-                   linestyle="none", markersize=6, label="DUMP"),
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=dpi, facecolor=T["surface"])
+    plt.close(fig)
+    print(f"  wrote {out_path.relative_to(REPO_ROOT) if out_path.is_relative_to(REPO_ROOT) else out_path}")
+
+
+# =============================================================================
+# Summary table
+# =============================================================================
+
+def summary_table(instances: list[dict]) -> str:
+    lines = [
+        "| Instance | Containers | Routes after construction | Final routes "
+        "| Total route time (h) | Median route vs shift limit |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
-    ax.legend(handles=handles, fontsize=6, ncol=2,
-              loc="upper left", framealpha=0.7)
-    ax.set_title(title, fontsize=10, pad=6)
-    ax.set_xlabel("longitude", fontsize=8)
-    ax.set_ylabel("latitude",  fontsize=8)
-    ax.tick_params(labelsize=7)
-    ax.grid(True, linewidth=0.3, alpha=0.4)
+    for inst in instances:
+        built = inst["snapshots"].get("solomon_construction", (None, None))[0]
+        shares = [100 * r["total_s"] / inst["limit_s"] for r in inst["summary"]]
+        total_h = sum(r["total_s"] for r in inst["summary"]) / 3600
+        lines.append(
+            f"| `{inst['name']}` | {len(inst['container_xy'][0]):,} | {built if built else '—'} "
+            f"| **{len(inst['routes'])}** | {total_h:.1f} | {statistics.median(shares):.1f}% |"
+        )
+    return "\n".join(lines)
 
+
+# =============================================================================
+# Main
+# =============================================================================
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Visualize SmartEcoRutas ALNS solver — all instances",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        "--data-dir", type=Path, default=Path("data"),
-        help="parent folder containing the 4 instance subfolders",
-    )
-    parser.add_argument(
-        "--extra-dir", type=Path, default=Path("extra_algorithm_output"),
-        help="folder written by the solver (contains solution.json per instance)",
-    )
-    parser.add_argument(
-        "--from-solution", action="store_true",
-        help="replay mode: load saved solution.json instead of re-running the solver",
-    )
-    parser.add_argument("--time-limit", type=float, default=120.0,
-                        help="solver budget in seconds per instance (solver mode only)")
-    parser.add_argument("--seed",       type=int,   default=0)
-    parser.add_argument("--dpi",        type=int,   default=150)
+    parser = argparse.ArgumentParser(description="Draw the figures for the SmartEcoRutas solver.")
+    parser.add_argument("--data-dir", default="data", help="instance folders (default: data)")
+    parser.add_argument("--extra-dir", default="extra_algorithm_output",
+                        help="solver output folder (default: extra_algorithm_output)")
+    parser.add_argument("--out-dir", default="docs/img", help="where figures go (default: docs/img)")
+    parser.add_argument("--instances", nargs="*", default=INSTANCES)
+    parser.add_argument("--theme", choices=["light", "dark", "both"], default="both")
+    parser.add_argument("--dpi", type=int, default=200)
+    parser.add_argument("--run", action="store_true",
+                        help="run the solver through run.py before drawing")
+    parser.add_argument("--time-limit-min", type=float, default=15.0,
+                        help="solver budget per instance when --run is given (default: 15)")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--social", action="store_true",
+                        help="also draw the 1280x640 repository card")
     args = parser.parse_args()
 
-    random.seed(args.seed)
-    np.random.seed(args.seed)
+    data_dir = (REPO_ROOT / args.data_dir).resolve()
+    extra_dir = (REPO_ROOT / args.extra_dir).resolve()
+    out_dir = (REPO_ROOT / args.out_dir).resolve()
 
-    found = []
-    for name in INSTANCES:
-        p = args.data_dir / name
-        if p.exists():
-            found.append((name, p))
-        else:
-            print(f"[skip] {p} not found")
+    if args.run:
+        cmd = [sys.executable, "run.py", "--instances", *args.instances, "--no-geo",
+               "--time-limit-min", str(args.time_limit_min), "--seed", str(args.seed)]
+        print("[viz] running:", " ".join(cmd))
+        subprocess.run(cmd, cwd=REPO_ROOT, check=True)
 
-    if not found:
-        print(f"No instances found under {args.data_dir}. Check --data-dir.")
-        return
+    loaded = []
+    for name in args.instances:
+        inst = load_instance(data_dir, extra_dir, name)
+        if inst is None:
+            print(f"[viz] {name}: no solution.json/extra_result.json in {extra_dir} — skipped "
+                  "(run with --run first)")
+            continue
+        loaded.append(inst)
+    if not loaded:
+        sys.exit("[viz] nothing to draw")
 
-    # ── replay mode: load saved solution, draw map, done ─────────────────────
-    if args.from_solution:
-        print("[viz] Replay mode — loading saved solutions from solution.json")
-        for name, inst_dir in found:
-            print(f"\n  {name}")
-            out_dir = REPO_ROOT / "output" / name
-            _replay_instance(name, inst_dir, args.extra_dir, out_dir, args.dpi)
-        print("\n[viz] Done.")
-        return
+    themes = ["light", "dark"] if args.theme == "both" else [args.theme]
+    for theme in themes:
+        for inst in loaded:
+            plot_route_grid(inst, theme, out_dir / f"routes_{inst['name'].lower()}_{theme}.png",
+                            args.dpi)
+        plot_utilisation(loaded, theme, out_dir / f"utilisation_{theme}.png", args.dpi)
+    if args.social:
+        plot_social_preview(loaded[0], out_dir / "social-preview.png")
 
-    # ── solver mode: run solver, save snapshots ───────────────────────────────
-    for name, inst_dir in found:
-        print(f"\n{'='*60}")
-        print(f"  Instance: {name}")
-        print(f"{'='*60}")
-
-        out_dir = REPO_ROOT / "output" / name
-        out_dir.mkdir(parents=True, exist_ok=True)
-        print(f"  Output  : {out_dir}")
-
-        problem  = ProblemInstance.load_from_dir(inst_dir)
-        solver   = _VisualizingSolver(problem, out_dir, args.dpi)
-        deadline = time.time() + args.time_limit - 2.0
-        solver.run(deadline)
-
-        print(f"  Files saved:")
-        for f in sorted(out_dir.iterdir()):
-            print(f"    {f.name}")
-
-    print("\n[viz] All instances done.")
+    print()
+    print(summary_table(loaded))
 
 
 if __name__ == "__main__":

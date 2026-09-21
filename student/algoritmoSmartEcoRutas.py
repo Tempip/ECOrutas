@@ -1,15 +1,49 @@
 """
 student/algoritmoSmartEcoRutas.py
 ==================================
-SmartEcoRutas VRP Solver — UPCT / Lhicarsa competition.
+SmartEcoRutas VRP solver for the Retos-UPCT challenge sponsored by Lhicarsa.
+Authors: Pedro José Rodrigues Souza and Illia Pastushenko.
+
+Problem
+-------
+Waste-collection routing in Cartagena. Every container is visited exactly once,
+every route starts and ends at BASE, a truck must unload at the DUMP each time
+it has collected `max_containers_before_dump` containers (and once more at the
+end of the route), and every route must fit in the working-time limit
+`route_max_work_s`. The objective is lexicographic:
+    1. minimise the number of routes
+    2. minimise the total route time
 
 Pipeline
 --------
-1. Clarke-Wright savings  — greedy deterministic construction
-2. Route merge pass        — aggressively reduce route count
-3. Local search            — relocate, or-opt, 2-opt, route-merge
-4. ILS loop               — double-bridge perturbation of best + LS until deadline
-5. Final route merge pass  — squeeze last route reductions before output
+The solver is anytime: it always returns the best solution found before the
+deadline.
+
+1. Construction (SOLOMON_S seconds)
+   Multi-start Solomon I1 insertion with several seeds and lambda values
+   (1.0, 0.5, 2.0). The N_SOL_CANDIDATES best solutions are kept.
+
+2. Time slices
+   The remaining budget is split equally among the candidates. On each one:
+   a. Local search (SOLOMON_LS_S seconds): route merge, relocate, or-opt and
+      intra-route 2-opt, guided by k-nearest-neighbour lists (K_RELOC).
+   b. Geography-aware driver (_s_driver), repeated until the slice ends:
+        A   ejection-chain burst on the smallest routes (route elimination)
+        A'  force-eliminate fallback on the smallest route
+        B   cross-route 2-opt to cut travel time
+        C   container swaps between routes of neighbouring sectors
+        D   intra-route polish
+      When the search stalls, three escalating escapes:
+        1. LNS route elimination: remove the shortest route and reinsert its
+           containers with regret-2 insertion.
+        2. Infeasible ruin-and-recreate: remove a route, reinsert its
+           containers allowing controlled overtime, then compress the solution
+           back to feasibility.
+        3. Double-bridge perturbation of the best solution (ILS restart, at
+           most MAX_RESTARTS per slice).
+   c. Final polish on the last slice.
+
+3. The best solution over all slices is returned.
 
 Internal representation
 -----------------------
@@ -17,10 +51,10 @@ Routes are stored as  list[list[int]]  where every int is a *container
 position* — an index into self.cont_uids / self.cont_mi.
 BASE and DUMP nodes are implicit; to_uid_route() inserts them on export.
 
-Scoring (primary → tiebreaker)
--------------------------------
-1. Minimum total routes   — drives every design decision
-2. Minimum total travel time
+Side effect
+-----------
+Intermediate snapshots and the final solution are written to
+extra_algorithm_output/<instance>/ so that visualize.py can draw them.
 """
 
 from __future__ import annotations
@@ -153,7 +187,7 @@ class _Solver:
         return len(routes), sum(self.route_time(r) for r in routes)
 
     # ------------------------------------------------------------------
-    # Phase-2/3/5 helpers (PHASES_2-5.md §1.3, §1.4)
+    # Route-time helpers
     # ------------------------------------------------------------------
 
     def route_travel(self, route: list[int]) -> float:
@@ -183,7 +217,7 @@ class _Solver:
         return total
 
     def total_travel(self, routes: list[list[int]]) -> float:
-        """Sum of travel-only time across all routes (PHASES_2-5.md §1.3)."""
+        """Sum of travel-only time across all routes."""
         return sum(self.route_travel(r) for r in routes)
 
     # ------------------------------------------------------------------
@@ -203,10 +237,6 @@ class _Solver:
         route.append(self.DUMP)
         route.append(self.BASE)
         return route
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # Phase 1 — Clarke-Wright savings construction
-    # ══════════════════════════════════════════════════════════════════════════
 
     # ══════════════════════════════════════════════════════════════════════════
     # Route-merge pass   (directly attacks primary objective)
@@ -487,11 +517,7 @@ class _Solver:
 
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Phase 1 — multi-start CW branch
-    # ══════════════════════════════════════════════════════════════════════════
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # Phase 1 — Solomon I1 insertion branch
+    # Phase 1 — Solomon I1 insertion (multi-start construction)
     # ══════════════════════════════════════════════════════════════════════════
 
     def _solomon_i1(self, positions: list[int], seed: int,
@@ -639,7 +665,7 @@ class _Solver:
         return [sol for _, sol in top_k]
 
     # ══════════════════════════════════════════════════════════════════════════
-    # ALNS — startup: DBSCAN clustering
+    # Snapshots for visualize.py
     # ══════════════════════════════════════════════════════════════════════════
 
 
