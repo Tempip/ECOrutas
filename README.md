@@ -17,11 +17,11 @@ These results come from our final run under the official protocol: 15 minutes pe
 
 | Instance | Containers | Routes | Total route time | Driving time |
 |---|---:|---:|---:|---:|
-| `LATERAL_CARTON` | 1,128 | 13 → **12** | 82.3 h → **78.8 h** | 52.5 h |
-| `LATERAL_ENVASE` | 1,335 | 14 → **13** | 90.7 h → **86.0 h** | 55.4 h |
-| `LATERAL_RESTO` | 2,392 | 24 → **24** | 154.0 h → **145.9 h** | 86.2 h |
-| `TRASERA_RESTO` | 1,591 | 17 → **16** | 108.5 h → **105.9 h** | 62.6 h |
-| **Total** | **6,446** | 68 → **65** | 435.6 h → **416.7 h** | **256.7 h** |
+| `LATERAL_CARTON` | 1,128 | **12** | **78.8 h** | 52.5 h |
+| `LATERAL_ENVASE` | 1,335 | **13** | **86.0 h** | 55.4 h |
+| `LATERAL_RESTO` | 2,392 | **24** | **145.9 h** | 86.2 h |
+| `TRASERA_RESTO` | 1,591 | **16** | **105.9 h** | 62.6 h |
+| **Total** | **6,446** | **65** | **416.7 h** | **256.7 h** |
 
 Each arrow goes from the best solution of the multi-start construction to the final solution. The search removes a whole route in three of the four instances and cuts 18.9 hours of total route time. Total route time adds up driving, service at every container and unloading at the dump; driving time on its own is the ranking's tiebreaker.
 
@@ -117,8 +117,3 @@ The solver works against the clock, so a faster or slower machine gets through a
 
 Students at the Universidad Politécnica de Cartagena.
 
-## Credits and license
-
-The challenge, its data and the kit (`framework/`, `run.py`, `data/` and the [original rules](docs/CHALLENGE.md)) come from the [Retos-UPCT](https://retos.upct.es) programme of the Universidad Politécnica de Cartagena; the kit was first published by Pablo Pavón Mariño. The challenge was sponsored by Lhicarsa. Container locations are based on real data; the organisers note that some values may have been altered for privacy and academic purposes.
-
-The kit is released by UPCT under the [MIT License](LICENSE). Under the challenge rules, the teams are the authors and owners of their algorithms.
