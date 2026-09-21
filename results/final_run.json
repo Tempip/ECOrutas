@@ -1,0 +1,109 @@
+{
+  "about": "Our final run under the official protocol (15 minutes per instance, seed 0), transcribed from its run.py log. Route values are hours rounded to 0.01, as the log prints them.",
+  "command": "python run.py --seed 0 --no-geo --time-limit-min 15",
+  "time_limit_s": 900,
+  "route_limit_s": 24000,
+  "instances": {
+    "LATERAL_CARTON": {
+      "containers": 1128,
+      "containers_per_trip": 362,
+      "service_s_per_container": 65,
+      "construction": {"multi_start_runs": 7, "routes": 13, "total_time_h": 82.332},
+      "final": {"routes": 12, "total_time_s": 283755, "travel_time_s": 188835, "dump_visits": 12, "compute_time_s": 879.66},
+      "routes": [
+        {"total_h": 6.57, "travel_h": 4.64, "service_h": 1.93, "containers": 79, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 5.16, "service_h": 1.49, "containers": 55, "dump_visits": 1},
+        {"total_h": 6.53, "travel_h": 4.52, "service_h": 2.02, "containers": 84, "dump_visits": 1},
+        {"total_h": 6.49, "travel_h": 4.77, "service_h": 1.73, "containers": 68, "dump_visits": 1},
+        {"total_h": 6.57, "travel_h": 3.27, "service_h": 3.30, "containers": 155, "dump_visits": 1},
+        {"total_h": 6.47, "travel_h": 4.42, "service_h": 2.05, "containers": 86, "dump_visits": 1},
+        {"total_h": 6.66, "travel_h": 3.70, "service_h": 2.96, "containers": 136, "dump_visits": 1},
+        {"total_h": 6.60, "travel_h": 4.43, "service_h": 2.18, "containers": 93, "dump_visits": 1},
+        {"total_h": 6.61, "travel_h": 3.84, "service_h": 2.77, "containers": 126, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 4.69, "service_h": 1.96, "containers": 81, "dump_visits": 1},
+        {"total_h": 6.66, "travel_h": 5.58, "service_h": 1.08, "containers": 32, "dump_visits": 1},
+        {"total_h": 6.35, "travel_h": 3.45, "service_h": 2.90, "containers": 133, "dump_visits": 1}
+      ]
+    },
+    "LATERAL_ENVASE": {
+      "containers": 1335,
+      "containers_per_trip": 294,
+      "service_s_per_container": 65,
+      "construction": {"multi_start_runs": 5, "routes": 14, "total_time_h": 90.732},
+      "final": {"routes": 13, "total_time_s": 309563, "travel_time_s": 199388, "dump_visits": 13, "compute_time_s": 880.41},
+      "routes": [
+        {"total_h": 6.63, "travel_h": 4.43, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 6.62, "travel_h": 5.38, "service_h": 1.24, "containers": 41, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 5.00, "service_h": 1.66, "containers": 64, "dump_visits": 1},
+        {"total_h": 6.53, "travel_h": 4.68, "service_h": 1.85, "containers": 75, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 5.00, "service_h": 1.66, "containers": 64, "dump_visits": 1},
+        {"total_h": 6.56, "travel_h": 3.98, "service_h": 2.58, "containers": 115, "dump_visits": 1},
+        {"total_h": 6.55, "travel_h": 4.55, "service_h": 2.00, "containers": 83, "dump_visits": 1},
+        {"total_h": 6.59, "travel_h": 4.19, "service_h": 2.40, "containers": 105, "dump_visits": 1},
+        {"total_h": 6.61, "travel_h": 4.10, "service_h": 2.50, "containers": 111, "dump_visits": 1},
+        {"total_h": 6.66, "travel_h": 3.44, "service_h": 3.23, "containers": 151, "dump_visits": 1},
+        {"total_h": 6.63, "travel_h": 3.84, "service_h": 2.79, "containers": 127, "dump_visits": 1},
+        {"total_h": 6.66, "travel_h": 3.36, "service_h": 3.30, "containers": 155, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 3.44, "service_h": 3.21, "containers": 150, "dump_visits": 1}
+      ]
+    },
+    "LATERAL_RESTO": {
+      "containers": 2392,
+      "containers_per_trip": 94,
+      "service_s_per_container": 65,
+      "construction": {"multi_start_runs": 2, "routes": 24, "total_time_h": 153.965},
+      "final": {"routes": 24, "total_time_s": 525376, "travel_time_s": 310496, "dump_visits": 33, "compute_time_s": 883.48},
+      "routes": [
+        {"total_h": 6.64, "travel_h": 4.95, "service_h": 1.69, "containers": 66, "dump_visits": 1},
+        {"total_h": 6.03, "travel_h": 3.84, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 6.66, "travel_h": 4.75, "service_h": 1.91, "containers": 78, "dump_visits": 1},
+        {"total_h": 5.99, "travel_h": 3.81, "service_h": 2.18, "containers": 93, "dump_visits": 1},
+        {"total_h": 6.01, "travel_h": 3.81, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 5.26, "travel_h": 3.10, "service_h": 2.16, "containers": 92, "dump_visits": 1},
+        {"total_h": 6.57, "travel_h": 4.47, "service_h": 2.11, "containers": 89, "dump_visits": 1},
+        {"total_h": 6.49, "travel_h": 4.30, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 5.39, "travel_h": 3.20, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 5.88, "travel_h": 3.68, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 5.28, "travel_h": 3.09, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 6.23, "travel_h": 4.23, "service_h": 2.00, "containers": 83, "dump_visits": 1},
+        {"total_h": 4.80, "travel_h": 2.60, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 6.61, "travel_h": 3.88, "service_h": 2.73, "containers": 96, "dump_visits": 2},
+        {"total_h": 4.86, "travel_h": 2.67, "service_h": 2.20, "containers": 94, "dump_visits": 1},
+        {"total_h": 6.41, "travel_h": 3.21, "service_h": 3.20, "containers": 122, "dump_visits": 2},
+        {"total_h": 6.63, "travel_h": 3.44, "service_h": 3.18, "containers": 121, "dump_visits": 2},
+        {"total_h": 6.64, "travel_h": 3.47, "service_h": 3.17, "containers": 120, "dump_visits": 2},
+        {"total_h": 6.64, "travel_h": 3.56, "service_h": 3.08, "containers": 115, "dump_visits": 2},
+        {"total_h": 6.65, "travel_h": 3.55, "service_h": 3.09, "containers": 116, "dump_visits": 2},
+        {"total_h": 6.65, "travel_h": 3.44, "service_h": 3.20, "containers": 122, "dump_visits": 2},
+        {"total_h": 6.39, "travel_h": 3.35, "service_h": 3.04, "containers": 113, "dump_visits": 2},
+        {"total_h": 6.57, "travel_h": 3.37, "service_h": 3.20, "containers": 122, "dump_visits": 2},
+        {"total_h": 4.67, "travel_h": 2.50, "service_h": 2.16, "containers": 92, "dump_visits": 1}
+      ]
+    },
+    "TRASERA_RESTO": {
+      "containers": 1591,
+      "containers_per_trip": 168,
+      "service_s_per_container": 80,
+      "construction": {"multi_start_runs": 4, "routes": 17, "total_time_h": 108.548},
+      "final": {"routes": 16, "total_time_s": 381395, "travel_time_s": 225315, "dump_visits": 16, "compute_time_s": 879.94},
+      "routes": [
+        {"total_h": 6.65, "travel_h": 4.44, "service_h": 2.21, "containers": 77, "dump_visits": 1},
+        {"total_h": 6.64, "travel_h": 4.10, "service_h": 2.54, "containers": 92, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 3.57, "service_h": 3.08, "containers": 116, "dump_visits": 1},
+        {"total_h": 6.61, "travel_h": 4.34, "service_h": 2.28, "containers": 80, "dump_visits": 1},
+        {"total_h": 6.61, "travel_h": 3.82, "service_h": 2.79, "containers": 103, "dump_visits": 1},
+        {"total_h": 6.59, "travel_h": 3.55, "service_h": 3.03, "containers": 114, "dump_visits": 1},
+        {"total_h": 6.66, "travel_h": 3.49, "service_h": 3.17, "containers": 120, "dump_visits": 1},
+        {"total_h": 6.66, "travel_h": 4.10, "service_h": 2.57, "containers": 93, "dump_visits": 1},
+        {"total_h": 6.61, "travel_h": 4.49, "service_h": 2.12, "containers": 73, "dump_visits": 1},
+        {"total_h": 6.64, "travel_h": 3.96, "service_h": 2.68, "containers": 98, "dump_visits": 1},
+        {"total_h": 6.62, "travel_h": 3.78, "service_h": 2.83, "containers": 105, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 3.33, "service_h": 3.32, "containers": 127, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 3.75, "service_h": 2.90, "containers": 108, "dump_visits": 1},
+        {"total_h": 6.63, "travel_h": 4.06, "service_h": 2.57, "containers": 93, "dump_visits": 1},
+        {"total_h": 6.65, "travel_h": 4.06, "service_h": 2.59, "containers": 94, "dump_visits": 1},
+        {"total_h": 6.43, "travel_h": 3.75, "service_h": 2.68, "containers": 98, "dump_visits": 1}
+      ]
+    }
+  }
+}

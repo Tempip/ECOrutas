@@ -1,14 +1,18 @@
 """
 visualize.py — figures for the SmartEcoRutas solver
 ====================================================
-Draws the solutions that student/algoritmoSmartEcoRutas.py writes to
-extra_algorithm_output/<INSTANCE>/ (solution.json, extra_result.json and the
-*_routes.json pipeline snapshots). Every figure in the README is produced by
-this script.
+Every figure in the README is produced by this script, from two sources:
+
+- extra_algorithm_output/<INSTANCE>/: the solutions that
+  student/algoritmoSmartEcoRutas.py writes (solution.json, extra_result.json and
+  the *_routes.json pipeline snapshots). They feed the route maps.
+- results/final_run.json: per-route results of our final run under the official
+  protocol, transcribed from its log. It feeds the route-duration chart and the
+  results table. Without it, the chart falls back to the saved solutions.
 
 Usage
 -----
-    python visualize.py                  # figures from the saved solver output
+    python visualize.py                  # figures from the saved output
     python visualize.py --run            # run the solver first (15 min per instance)
     python visualize.py --instances LATERAL_CARTON --theme light
     python visualize.py --social         # also draw the 1280x640 repository card
@@ -19,7 +23,7 @@ Output (default folder: docs/img/)
     utilisation_<theme>.png         duration of every route as a share of the shift
     social-preview.png              repository card for GitHub / LinkedIn (--social)
 
-A summary table in Markdown is printed at the end.
+The results table of the README is printed at the end, in Markdown.
 
 Authors: Pedro José Rodrigues Souza and Illia Pastushenko.
 """
@@ -106,6 +110,27 @@ def load_instance(data_dir: Path, extra_dir: Path, name: str) -> dict | None:
         "limit_s": float(result["limit_s"]),
         "snapshots": snapshots,
     }
+
+
+def load_final_run(path: Path, names: list[str]) -> list[dict]:
+    """Per-route results of the final run, shaped like load_instance() output."""
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    runs = []
+    for name in names:
+        inst = data["instances"].get(name)
+        if inst is None:
+            continue
+        runs.append({
+            "name": name,
+            "limit_s": float(data["route_limit_s"]),
+            "summary": [{"total_s": r["total_h"] * 3600} for r in inst["routes"]],
+            "containers": inst["containers"],
+            "construction": inst["construction"],
+            "final": inst["final"],
+        })
+    return runs
 
 
 # =============================================================================
@@ -213,7 +238,8 @@ def plot_route_grid(inst: dict, theme: str, out_path: Path, dpi: int) -> None:
 # Figure 2 — route duration as a share of the working-time limit
 # =============================================================================
 
-def plot_utilisation(instances: list[dict], theme: str, out_path: Path, dpi: int) -> None:
+def plot_utilisation(instances: list[dict], theme: str, out_path: Path, dpi: int,
+                     subtitle: str = "Each dot is one route of the final solution.") -> None:
     T = THEMES[theme]
     fig, ax = plt.subplots(figsize=(8.2, 0.78 * len(instances) + 1.75), dpi=dpi)
     fig.patch.set_facecolor(T["surface"])
@@ -257,8 +283,7 @@ def plot_utilisation(instances: list[dict], theme: str, out_path: Path, dpi: int
 
     fig.text(0.015, 0.975, "Route duration as a share of the working-time limit",
              fontsize=12, fontweight="bold", color=T["ink"], va="top")
-    fig.text(0.015, 0.975 - 0.34 / fig.get_figheight(),
-             "Each dot is one route of the final solution.",
+    fig.text(0.015, 0.975 - 0.34 / fig.get_figheight(), subtitle,
              fontsize=8.5, color=T["ink2"], va="top")
     fig.subplots_adjust(left=0.2, right=0.79, top=1 - 0.95 / fig.get_figheight(),
                         bottom=0.42 / fig.get_figheight())
@@ -327,6 +352,33 @@ def summary_table(instances: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def results_table(runs: list[dict]) -> str:
+    """The README results table: best construction -> final solution, per instance."""
+    lines = [
+        "| Instance | Containers | Routes | Total route time | Driving time |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    sums = {"containers": 0, "r0": 0, "r1": 0, "h0": 0.0, "h1": 0.0, "drive": 0.0}
+    for run in runs:
+        built, final = run["construction"], run["final"]
+        h1 = final["total_time_s"] / 3600
+        drive = final["travel_time_s"] / 3600
+        lines.append(
+            f"| `{run['name']}` | {run['containers']:,} | {built['routes']} → **{final['routes']}** "
+            f"| {built['total_time_h']:.1f} h → **{h1:.1f} h** | {drive:.1f} h |"
+        )
+        for key, value in (("containers", run["containers"]), ("r0", built["routes"]),
+                           ("r1", final["routes"]), ("h0", built["total_time_h"]),
+                           ("h1", h1), ("drive", drive)):
+            sums[key] += value
+    if len(runs) > 1:
+        lines.append(
+            f"| **Total** | **{sums['containers']:,}** | {sums['r0']} → **{sums['r1']}** "
+            f"| {sums['h0']:.1f} h → **{sums['h1']:.1f} h** | **{sums['drive']:.1f} h** |"
+        )
+    return "\n".join(lines)
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -336,6 +388,8 @@ def main() -> None:
     parser.add_argument("--data-dir", default="data", help="instance folders (default: data)")
     parser.add_argument("--extra-dir", default="extra_algorithm_output",
                         help="solver output folder (default: extra_algorithm_output)")
+    parser.add_argument("--results", default="results/final_run.json",
+                        help="per-route results of the final run (default: results/final_run.json)")
     parser.add_argument("--out-dir", default="docs/img", help="where figures go (default: docs/img)")
     parser.add_argument("--instances", nargs="*", default=INSTANCES)
     parser.add_argument("--theme", choices=["light", "dark", "both"], default="both")
@@ -363,24 +417,40 @@ def main() -> None:
     for name in args.instances:
         inst = load_instance(data_dir, extra_dir, name)
         if inst is None:
-            print(f"[viz] {name}: no solution.json/extra_result.json in {extra_dir} — skipped "
+            print(f"[viz] {name}: no solution.json/extra_result.json in {extra_dir} — no map "
                   "(run with --run first)")
             continue
         loaded.append(inst)
-    if not loaded:
+    final_run = [] if args.run else load_final_run((REPO_ROOT / args.results).resolve(),
+                                                   args.instances)
+    if not loaded and not final_run:
         sys.exit("[viz] nothing to draw")
+
+    # The duration chart uses the final run when available, else the saved solutions.
+    if final_run:
+        chart_data = final_run
+        subtitle = ("Each dot is one route. Final run under the official protocol: "
+                    "15 minutes per instance, seed 0.")
+    else:
+        chart_data = loaded
+        subtitle = "Each dot is one route of the saved solution."
 
     themes = ["light", "dark"] if args.theme == "both" else [args.theme]
     for theme in themes:
         for inst in loaded:
             plot_route_grid(inst, theme, out_dir / f"routes_{inst['name'].lower()}_{theme}.png",
                             args.dpi)
-        plot_utilisation(loaded, theme, out_dir / f"utilisation_{theme}.png", args.dpi)
-    if args.social:
+        plot_utilisation(chart_data, theme, out_dir / f"utilisation_{theme}.png", args.dpi,
+                         subtitle)
+    if args.social and loaded:
         plot_social_preview(loaded[0], out_dir / "social-preview.png")
 
-    print()
-    print(summary_table(loaded))
+    if final_run:
+        print("\nFinal run (README results table):\n")
+        print(results_table(final_run))
+    if loaded:
+        print("\nSaved solutions in extra_algorithm_output/:\n")
+        print(summary_table(loaded))
 
 
 if __name__ == "__main__":

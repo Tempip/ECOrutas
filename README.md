@@ -13,14 +13,26 @@
 
 ## Results
 
-On `LATERAL_CARTON` (1,128 containers), run with the official protocol of 15 minutes and seed 0:
+These results come from our final run under the official protocol: 15 minutes per instance, seed 0. The challenge's evaluator found no constraint violations and no warnings in any of the four solutions.
 
-| | Routes | Total route time |
-|---|---:|---:|
-| Best starting solution (multi-start construction) | 13 | 82.3 h |
-| Final solution | **12** | **78.8 h** |
+| Instance | Containers | Routes | Total route time | Driving time |
+|---|---:|---:|---:|---:|
+| `LATERAL_CARTON` | 1,128 | 13 → **12** | 82.3 h → **78.8 h** | 52.5 h |
+| `LATERAL_ENVASE` | 1,335 | 14 → **13** | 90.7 h → **86.0 h** | 55.4 h |
+| `LATERAL_RESTO` | 2,392 | 24 → **24** | 154.0 h → **145.9 h** | 86.2 h |
+| `TRASERA_RESTO` | 1,591 | 17 → **16** | 108.5 h → **105.9 h** | 62.6 h |
+| **Total** | **6,446** | 68 → **65** | 435.6 h → **416.7 h** | **256.7 h** |
 
-The search deletes a whole route from the best construction and still cuts 3.5 hours of total route time. All 12 routes last between 97% and 100% of the 6 h 40 min working day: the trucks are packed to the limit, which is what minimising the number of routes demands. The solution and every intermediate stage are saved in [`extra_algorithm_output/`](extra_algorithm_output/).
+Each arrow goes from the best solution of the multi-start construction to the final solution. The search removes a whole route in three of the four instances and cuts 18.9 hours of total route time. Total route time adds up driving, service at every container and unloading at the dump; driving time on its own is the ranking's tiebreaker.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/utilisation_dark.png">
+  <img alt="Strip chart with one dot per route for each of the four instances, placed by route duration as a percentage of the 6 h 40 min limit. The routes of LATERAL_CARTON, LATERAL_ENVASE and TRASERA_RESTO all sit between 95% and 100%; the routes of LATERAL_RESTO spread from 70% to 100%." src="docs/img/utilisation_light.png">
+</picture>
+
+In three of the four instances every route lasts at least 95% of the 6 h 40 min working day: the trucks are packed as tightly as the day allows, which is what minimising the number of routes demands. `LATERAL_RESTO` is the exception. There a truck is full after 94 containers, so on many routes the payload runs out well before the working day does, and 9 of the 24 routes unload at the dump and set out on a second round.
+
+The maps at the top of this page are drawn from the `LATERAL_CARTON` solution in [`extra_algorithm_output/`](extra_algorithm_output/), which also keeps every intermediate stage of the pipeline. That solution comes from a separate run of the same solver, which also reached 12 routes and 78.8 hours. The per-route numbers of the final run are in [`results/final_run.json`](results/final_run.json).
 
 ## The problem
 
@@ -40,7 +52,7 @@ A solution is a set of routes such that:
 - a truck must unload at the dump (30 minutes) once it has collected the number of containers its payload allows, and can do so several times in the same route;
 - no route may last longer than the working day: **6 h 40 min**, service and unloading included.
 
-The ranking is **lexicographic**: first the fewest routes, summed over the four instances; travel time only breaks ties. Each instance gets **15 minutes** of computation, with a 5-second tolerance.
+The ranking is **lexicographic**: first the fewest routes, summed over the four instances; total driving time only breaks ties. Each instance gets **15 minutes** of computation, with a 5-second tolerance.
 
 ## How the solver works
 
@@ -60,7 +72,7 @@ flowchart LR
 - **Deleting routes.** Ejection chains try to empty the smallest routes into their neighbours. When those stall, LNS removes the shortest route and reinserts its containers with regret-2 insertion, placing first the container that would lose most by waiting.
 - **Allowing overtime on purpose.** When that fails too, an *infeasible ruin-and-recreate* removes a whole route, spreads its containers over the others even if some routes go over the 6 h 40 min limit, and then squeezes the overload out with 2-opt\*, relocations, swaps and merge-split moves, relaxing the acceptance rule when progress stalls. The aim is to reach solutions that moves which always stay feasible cannot get to. If even that fails, a double-bridge perturbation restarts the search from the best solution so far.
 - **Cheap, local moves.** Each container keeps a list of its 35 nearest neighbours that limits where it can be moved, and sector swaps only offer a container to another route when it sits closer to that route's centre than to its own. Every move stays cheap, so many of them fit in the budget.
-- **Anytime by design.** The deadline is checked throughout and a 2-second safety margin is kept, so the solver always returns its best valid solution within the official limit.
+- **Anytime by design.** The deadline is checked throughout and a 2-second safety margin is kept, so the solver always returns its best valid solution within the official limit. In the final run each instance took between 880 and 884 seconds of the 900 allowed.
 
 The full pipeline is documented at the top of [`student/algoritmoSmartEcoRutas.py`](student/algoritmoSmartEcoRutas.py).
 
@@ -81,7 +93,9 @@ python run.py --instances LATERAL_CARTON --time-limit-min 2 --no-geo
 python visualize.py
 ```
 
-`run.py` evaluates every solution and writes a report to `algorithm_output/<instance>/report.json`. Without `--no-geo` it also exports the routes for Google Earth (`.kmz`) and QGIS (`.gpkg`). The solver itself saves its final solution and the intermediate stages to `extra_algorithm_output/<instance>/`, which `visualize.py` reads.
+`run.py` evaluates every solution and writes a report to `algorithm_output/<instance>/report.json`. Without `--no-geo` it also exports the routes for Google Earth (`.kmz`) and QGIS (`.gpkg`). The solver itself saves its final solution and the intermediate stages to `extra_algorithm_output/<instance>/`. `visualize.py` draws the maps from there and the duration chart from `results/final_run.json`.
+
+The solver works against the clock, so a faster or slower machine gets through a different amount of search in the same 15 minutes and the results can differ slightly from the table above.
 
 ## What is in this repository
 
@@ -89,7 +103,8 @@ python visualize.py
 |---|---|---|
 | [`student/algoritmoSmartEcoRutas.py`](student/algoritmoSmartEcoRutas.py) | The solver, about 2,200 lines | Our team |
 | [`visualize.py`](visualize.py) | The figures in this README | Our team |
-| [`extra_algorithm_output/`](extra_algorithm_output/) | Solutions and pipeline snapshots from the run shown above | Our team |
+| [`results/final_run.json`](results/final_run.json) | Per-route results of the final run, behind the table and chart above | Our team |
+| [`extra_algorithm_output/`](extra_algorithm_output/) | A saved `LATERAL_CARTON` solution with every pipeline stage, drawn in the maps above | Our team |
 | [`framework/`](framework/), [`run.py`](run.py) | Instance loader, evaluator and runner | Challenge kit (UPCT) |
 | [`data/`](data/) | The four official instances | Challenge kit (UPCT) |
 | [`docs/CHALLENGE.md`](docs/CHALLENGE.md) | Original challenge rules, in Spanish | Challenge kit (UPCT) |
